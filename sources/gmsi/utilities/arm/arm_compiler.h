@@ -21,7 +21,7 @@
 
 /*============================ INCLUDES ======================================*/
 #if __IS_COMPILER_IAR__
-    #include<intrinsics.h>
+#   include<intrinsics.h>
 #endif
 
 /*============================ MACROS ========================================*/
@@ -119,7 +119,7 @@
 #elif __IS_COMPILER_GCC__
 #   define FLASH                const
 #   define EEPROM               const
-#   define NO_INIT              __attribute__(( section( ".bss.noinit"))
+#   define NO_INIT              __attribute__(( section( ".bss.noinit")))
 #   define ROOT                 __attribute__((used))    
 #   define INLINE               inline
 #   define ALWAYS_INLINE        __attribute__((always_inline))
@@ -185,8 +185,10 @@
   /*!< Macro to enable all interrupts. */
 #if __IS_COMPILER_IAR__
 #   define ENABLE_GLOBAL_INTERRUPT()            __enable_interrupt()
-#elif __IS_COMPILER_ARM_COMPILER_5__ || __IS_COMPILER_ARM_COMPILER_6__
+#elif __IS_COMPILER_ARM_COMPILER_5__ 
 #   define ENABLE_GLOBAL_INTERRUPT()            __enable_irq()
+#elif __IS_COMPILER_ARM_COMPILER_6__
+#   define ENABLE_GLOBAL_INTERRUPT()            __asm__ __volatile__ (" CPSIE i")
 #else
 #   define ENABLE_GLOBAL_INTERRUPT()            __asm__ __volatile__ (" CPSIE i")
 #endif
@@ -194,8 +196,31 @@
   /*!< Macro to disable all interrupts. */
 #if __IS_COMPILER_IAR__
 #   define DISABLE_GLOBAL_INTERRUPT()           __disable_interrupt()
-#elif __IS_COMPILER_ARM_COMPILER_5__ || __IS_COMPILER_ARM_COMPILER_6__
+#elif __IS_COMPILER_ARM_COMPILER_5__
 #   define DISABLE_GLOBAL_INTERRUPT()           __disable_irq()
+#elif __IS_COMPILER_ARM_COMPILER_6__
+#   define DISABLE_GLOBAL_INTERRUPT()           ____disable_irq()
+
+static __inline__ unsigned int __attribute__((__always_inline__, __nodebug__))
+____disable_irq(void) {
+  unsigned int cpsr;
+
+  __asm__ __volatile__("mrs %[cpsr], primask\n"
+                       "cpsid i\n"
+                       : [cpsr] "=r"(cpsr));
+  return cpsr & 0x1;
+}
+
+/**
+  \brief   Set Priority Mask
+  \details Assigns the given value to the Priority Mask Register.
+  \param [in]    priMask  Priority Mask
+ */
+__attribute__((always_inline)) static inline void ____set_PRIMASK(unsigned int priMask)
+{
+    __asm__ volatile ("MSR primask, %0" : : "r" (priMask) : "memory");
+}
+
 #else
 #   define DISABLE_GLOBAL_INTERRUPT()           __asm__ __volatile__ (" CPSID i");
 #endif
@@ -204,9 +229,13 @@
 #   define GET_GLOBAL_INTERRUPT_STATE()         __get_interrupt_state()
 #   define SET_GLOBAL_INTERRUPT_STATE(__STATE)  __set_interrupt_state(__STATE)
 typedef __istate_t   istate_t;
-#elif __IS_COMPILER_ARM_COMPILER_5__ || __IS_COMPILER_ARM_COMPILER_6__
+#elif __IS_COMPILER_ARM_COMPILER_5__ 
 #   define GET_GLOBAL_INTERRUPT_STATE()         __disable_irq()
-#   define SET_GLOBAL_INTERRUPT_STATE(__STATE) if (!__STATE) { __enable_irq(); }
+#   define SET_GLOBAL_INTERRUPT_STATE(__STATE)  if (!__STATE) { __enable_irq(); }
+typedef int   istate_t;
+#elif __IS_COMPILER_ARM_COMPILER_6__
+#   define GET_GLOBAL_INTERRUPT_STATE()         ____disable_irq()
+#   define SET_GLOBAL_INTERRUPT_STATE(__STATE)  ____set_PRIMASK(__STATE)        
 typedef int   istate_t;
 #elif __IS_COMPILER_GCC__
 typedef int   istate_t;

@@ -36,12 +36,13 @@
 
 
 /* -----------------  Start of section using anonymous unions  -------------- */
-#if defined(__CC_ARM)
+#if __IS_COMPILER_ARM_COMPILER_5__
   //#pragma push
   #pragma anon_unions
-#elif defined(__ICCARM__)
+#elif __IS_COMPILER_ARM_COMPILER_6__
+#elif __IS_COMPILER_IAR__
   #pragma language=extended
-#elif defined(__GNUC__)
+#elif __IS_COMPILER_GCC__
   /* anonymous unions are enabled by default */
 #elif defined(__TMS470__)
 /* anonymous unions are enabled by default */
@@ -62,6 +63,13 @@
 #   define target       (*ptTarget)
 #endif
 
+#ifndef private
+#   define private    static
+#endif
+
+#ifndef public
+#   define public      
+#endif
 
 /*============================ MACROFIED FUNCTIONS ===========================*/
 
@@ -212,10 +220,10 @@
           object. 
   \*/
 #define __OBJ_CONVERT_AS(__OBJ, __INTERFACE)    (__OBJ.base__##__INTERFACE)
-#define OBJ_CONVERT_AS(__OBJ, __INTERFACE)      __OBJ_CONVERT_AS(__OBJ, __INTERFACE)          
+#define OBJ_CONVERT_AS(__OBJ, __INTERFACE)      __OBJ_CONVERT_AS((__OBJ), __INTERFACE)          
 
 #define __REF_OBJ_AS(__OBJ, __TYPE)             (&(__OBJ.base__##__TYPE))
-#define REF_OBJ_AS(__OBJ, __TYPE)               __REF_OBJ_AS(__OBJ, __TYPE)
+#define REF_OBJ_AS(__OBJ, __TYPE)               __REF_OBJ_AS((__OBJ), __TYPE)
 
 #define REF_INTERFACE(__INTERFACE)      const __INTERFACE *ptMethod;
            

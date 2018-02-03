@@ -15,59 +15,43 @@
 *                                                                           *
 ****************************************************************************/
 
-#ifndef __UTILITIES_COMMUNICATE_H__
-#define __UTILITIES_COMMUNICATE_H__
+#ifndef __BLOCK_QUEUE_H__
+#define __BLOCK_QUEUE_H__
 
 /*============================ INCLUDES ======================================*/
+#include ".\app_cfg.h"
+
+#if USE_SERVICE_BLOCK_QUEUE == ENABLED
+#include "..\block\block.h"
+
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
+    
 /*============================ TYPES =========================================*/
 
-//! \name stream
+//! \brief stream buffer control block
 //! @{
-typedef struct {
-    union {
-        uint8_t *pchBuffer;         //!< stream buffer
-        uint8_t *pchSrc;
-        void *pObj;
-    };
-    uint_fast16_t hwSize;       //!< stream size
-} mem_block_t;
-//! @}
+declare_class(stream_buffer_t)
 
+declare_class(block_queue_t)
+extern_class(block_queue_t)                   //!< inherit from pool StreamBufferBlock
+    block_t                  *ptListHead;                                       //!< Queue Head
+    block_t                  *ptListTail;                                       //!< Queue Tail
+    uint32_t                 wCount;
+end_extern_class(block_queue_t)
 
-//! \name interface: byte pipe
-//! @{
-def_interface(i_byte_pipe_t)
-    //!< read a byte
-    bool (*ReadByte)(uint8_t *pchByte);
-    //!< write a byte
-    bool (*WriteByte)(uint8_t chByte);
-    
-    bool (*Flush)(void);
-end_def_interface(i_byte_pipe_t)
-//! @}
-
-//! \name interface: pipe
-//! @{
-def_interface(i_pipe_t)
-
-    inherit(i_byte_pipe_t)
-    
-    struct {
-        //! read a block
-        uint_fast16_t  (*Read)(uint8_t *pchStream, uint_fast16_t hwSize);
-        //! write a block
-        uint_fast16_t  (*Write)(uint8_t *pchStream, uint_fast16_t hwSize);
-    } Stream;
-
-end_def_interface(i_pipe_t)
-//! @}
+def_interface(i_block_queue_t)
+    bool        (*Init)     (block_queue_t *ptObj);
+    bool        (*Enqueue)  (block_queue_t *ptObj, block_t *ptItem);
+    block_t *   (*Dequeue)  (block_queue_t *ptObj);
+    uint32_t    (*Count)    (block_queue_t *ptObj);
+end_def_interface(i_block_queue_t)
 
 /*============================ GLOBAL VARIABLES ==============================*/
-/*============================ LOCAL VARIABLES ===============================*/
+extern const i_block_queue_t BLOCK_QUEUE;
+
 /*============================ PROTOTYPES ====================================*/
 
-
+#endif
 #endif
 /* EOF */

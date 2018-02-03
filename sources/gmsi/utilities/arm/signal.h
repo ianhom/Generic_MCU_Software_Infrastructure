@@ -19,6 +19,8 @@
 #define _USE_SIGNAL_H_
 
 /*============================ INCLUDES ======================================*/
+#include <stdbool.h>
+
 /*============================ MACROS ========================================*/
 
 #if __IS_COMPILER_ARM_COMPILER_5__ || __IS_COMPILER_ARM_COMPILER_6__
@@ -61,6 +63,7 @@
 //! @}
 
 //! \note critical code section protection
+//! \note LOCKER could be only used among FSMs and there should be no ISR involved.
 //! \param __LOCKER ES_LOCKER variable
 //! \param __CODE   target code segment
 #define LOCK(__LOCKER,...)  \
@@ -86,14 +89,13 @@
                             SET_GLOBAL_INTERRUPT_STATE(tState);\
                         } while(false)
 
-#define ENTER_LOCK(__LOCKER)    \
-                        enter_lock(__LOCKER)
+#define ENTER_LOCK(__LOCKER)            enter_lock(__LOCKER)
 
-#define LEAVE_LOCK(__LOCKER)    \
-                        leave_lock(__LOCKER)
+#define LEAVE_LOCK(__LOCKER)            leave_lock(__LOCKER)
+                        
+#define GET_LOCK_STATUS(__LOCKER)       check_lock(__LOCKER)
 
-#define INIT_LOCK(__LOCKER)     \
-                        init_lock(__LOCKER)
+#define INIT_LOCK(__LOCKER)             init_lock(__LOCKER)
                         
 //! \brief exit lock checker structure
 #define EXIT_LOCK_CHECKER() EXIT_SAFE_ATOM_CODE()
@@ -130,7 +132,12 @@ extern bool enter_lock(locker_t *ptLock);
  */
 extern void leave_lock(locker_t *ptLock);
             
-            
+/*! \brief get locker status
+ *! \param ptLock locker object
+ *! \return locker status
+ */
+extern bool check_lock(locker_t *ptLock);            
+           
 /*! \brief initialize a locker
  *! \param ptLock locker object
  *! \return none

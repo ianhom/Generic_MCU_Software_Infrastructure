@@ -193,10 +193,12 @@ extern ARM_DRIVER_USART  USART_Driver_(USART_DRV_NUM);
  *  \retval false   initialization failed
  */  
 bool stdout_init (void) 
-{
-    
+{    
     do {
         int32_t status;
+
+        STREAM_OUT_output_stream_adapter_init();
+        STREAM_IN_input_stream_adapter_init();
 
         status = ptrUSART->Initialize(NULL /*&UART0_Signal_Handler*/);
         if (status != ARM_DRIVER_OK) { 
@@ -228,8 +230,7 @@ bool stdout_init (void)
             break; 
         }
         
-        STREAM_OUT_output_stream_adapter_init();
-        STREAM_IN_input_stream_adapter_init();
+        
         return true;
     } while(false);
 
@@ -248,8 +249,15 @@ bool stdout_init (void)
 */
 int stdout_putchar (int ch) 
 {
-    while(!STREAM_OUT.Stream.Write(ch));
+    while(!STREAM_OUT.Stream.WriteByte(ch));
     
     return ch;
 }
 
+int stdin_getchar (void)
+{
+    uint8_t chByte;
+    while(!STREAM_IN.Stream.ReadByte(&chByte));
+    
+    return chByte;
+}

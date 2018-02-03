@@ -15,59 +15,72 @@
 *                                                                           *
 ****************************************************************************/
 
-#ifndef __UTILITIES_COMMUNICATE_H__
-#define __UTILITIES_COMMUNICATE_H__
+#ifndef __BLOCK_H__
+#define __BLOCK_H__
 
 /*============================ INCLUDES ======================================*/
+#include ".\app_cfg.h"
+
+#if USE_SERVICE_BLOCK == ENABLED
+#include "..\epool\epool.h"
+
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
+    
 /*============================ TYPES =========================================*/
 
-//! \name stream
+//! \brief fixed memory block used as stream buffer
 //! @{
-typedef struct {
+declare_class(block_t)
+extern_class(block_t)
+    inherit(__single_list_node_t)
+    uint32_t wBlockSize;
     union {
-        uint8_t *pchBuffer;         //!< stream buffer
-        uint8_t *pchSrc;
-        void *pObj;
+        uint32_t wSize;                                                         //!< memory block
+        uint32_t wBuffer;
     };
-    uint_fast16_t hwSize;       //!< stream size
-} mem_block_t;
+end_extern_class(block_t)
 //! @}
 
+declare_class(block_pool_t)
 
-//! \name interface: byte pipe
-//! @{
-def_interface(i_byte_pipe_t)
-    //!< read a byte
-    bool (*ReadByte)(uint8_t *pchByte);
-    //!< write a byte
-    bool (*WriteByte)(uint8_t chByte);
-    
-    bool (*Flush)(void);
-end_def_interface(i_byte_pipe_t)
-//! @}
+extern_class(block_pool_t, which( inherit(pool_t) ))
+    // nothing here...
+end_extern_class(block_pool_t, which( inherit(pool_t) ))
 
-//! \name interface: pipe
-//! @{
-def_interface(i_pipe_t)
-
-    inherit(i_byte_pipe_t)
+def_interface(i_block_t)
     
     struct {
-        //! read a block
-        uint_fast16_t  (*Read)(uint8_t *pchStream, uint_fast16_t hwSize);
-        //! write a block
-        uint_fast16_t  (*Write)(uint8_t *pchStream, uint_fast16_t hwSize);
-    } Stream;
-
-end_def_interface(i_pipe_t)
-//! @}
+        bool        (*Init) (block_pool_t *);
+        bool        (*Add)(block_pool_t *,void *, uint_fast16_t, uint_fast16_t);
+        block_t*    (*New)(block_pool_t *);
+        void        (*Free)(block_pool_t *, block_t *);
+        uint32_t    (*Count)(block_pool_t *ptObj);
+    } Heap;
+    block_t *       (*Init)(block_t *ptBlock, uint_fast16_t hwSize);
+    struct {
+        uint32_t    (*Get)(block_t *);
+        void        (*Set)(block_t *, uint32_t);
+        void        (*Reset)(block_t *);
+        uint32_t    (*Capability)(block_t *);
+    } Size;
+    struct {
+        void *      (*Get)(block_t *);
+        bool        (*Write)    (   block_t *ptObj, 
+                                    const void *pchSrc, 
+                                    uint_fast16_t hwSize, 
+                                    uint_fast16_t hwOffsite);
+    } Buffer;
+    
+end_def_interface(i_block_t)
 
 /*============================ GLOBAL VARIABLES ==============================*/
-/*============================ LOCAL VARIABLES ===============================*/
+
+extern i_block_t BLOCK;
+
 /*============================ PROTOTYPES ====================================*/
 
 
+#endif
 #endif
 /* EOF */

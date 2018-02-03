@@ -133,25 +133,25 @@ end_def_interface(i_multiple_delay_t)
 /*============================ LOCAL VARIABLES ===============================*/
 /*============================ PROTOTYPES ====================================*/
 
-static void insert_timer_tick_event_handler(  multiple_delay_t *ptObj);
+private void insert_timer_tick_event_handler(  multiple_delay_t *ptObj);
 
-static bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG );
+private bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG );
 
-static fsm_rt_t task(multiple_delay_t *ptObj);
+private fsm_rt_t task(multiple_delay_t *ptObj);
 
-static multiple_delay_item_t * request_delay(  
+private multiple_delay_item_t * request_delay(  
                             multiple_delay_t *ptObj,
                             uint32_t wDelay,
                             multiple_delay_request_priority_t tPriority,        //!< request priority
                             void *pTag,                                         //!< object passed to timeout event handler
                             timeout_event_handler_t *fnHandler);
-static void cancel_delay(multiple_delay_t *ptObj, multiple_delay_item_t *ptItem);
+private void cancel_delay(multiple_delay_t *ptObj, multiple_delay_item_t *ptItem);
 
-extern_fsm_implementation(multiple_delay_task);
-extern_fsm_initialiser(multiple_delay_task, 
-    args(
-        multiple_delay_t *ptObj
-    ));
+private declare_fsm_implementation(multiple_delay_task);
+private declare_fsm_initialiser(multiple_delay_task, 
+            args(
+                multiple_delay_t *ptObj
+            ));
 
 /*============================ GLOBAL VARIABLES ==============================*/
 const i_multiple_delay_t MULTIPLE_DELAY = {
@@ -168,7 +168,7 @@ const i_multiple_delay_t MULTIPLE_DELAY = {
 
 /*============================ IMPLEMENTATION ================================*/
 
-static fsm_rt_t task(multiple_delay_t *ptObj)
+private fsm_rt_t task(multiple_delay_t *ptObj)
 {
     class_internal(ptObj, ptThis, multiple_delay_t);
     if (NULL == ptThis) {
@@ -181,11 +181,10 @@ static fsm_rt_t task(multiple_delay_t *ptObj)
 }
         
         
-static void add_to_delay_list(  multiple_delay_item_t *ptItem, 
+private void add_to_delay_list(  multiple_delay_item_t *ptItem, 
                                 multiple_delay_item_t **ppList) 
 {
     class_internal(ptItem, ptTarget, multiple_delay_item_t);
-    
     __MD_ATOM_ACCESS (
         do {
             class_internal((*ppList), ptListItem, multiple_delay_item_t);
@@ -195,7 +194,8 @@ static void add_to_delay_list(  multiple_delay_item_t *ptItem,
                 break;
             }
             
-            if (ptListItem->wTargetTime >= target.wTargetTime) {
+            if (target.wTargetTime <= ptListItem->wTargetTime) {
+                
                 LIST_INSERT_AFTER((*ppList), ptItem);
                 break;
             }
@@ -206,7 +206,7 @@ static void add_to_delay_list(  multiple_delay_item_t *ptItem,
     )
 }
 
-static bool remove_from_delay_list( multiple_delay_item_t *ptItem, 
+private bool remove_from_delay_list( multiple_delay_item_t *ptItem, 
                                     multiple_delay_item_t **ppList)
 {
     class_internal(ptItem, ptTarget, multiple_delay_item_t);
@@ -234,7 +234,7 @@ static bool remove_from_delay_list( multiple_delay_item_t *ptItem,
     return bResult;
 }
 
-static void cancel_delay(multiple_delay_t *ptObj, multiple_delay_item_t *ptItem)
+private void cancel_delay(multiple_delay_t *ptObj, multiple_delay_item_t *ptItem)
 {
     class_internal(ptObj, ptThis, multiple_delay_t);
     class_internal(ptItem, ptTarget, multiple_delay_item_t);
@@ -277,7 +277,7 @@ static void cancel_delay(multiple_delay_t *ptObj, multiple_delay_item_t *ptItem)
                 ptItem);
 }
 
-static multiple_delay_item_t * request_delay(  
+private multiple_delay_item_t * request_delay(  
                             multiple_delay_t *ptObj,
                             uint32_t wDelay,
                             multiple_delay_request_priority_t tPriority,        //!< request priority
@@ -340,7 +340,7 @@ static multiple_delay_item_t * request_delay(
 }
     
         
-static void insert_timer_tick_event_handler(multiple_delay_t *ptObj)
+private void insert_timer_tick_event_handler(multiple_delay_t *ptObj)
 {
     class_internal(ptObj, ptThis, multiple_delay_t);
     
@@ -354,6 +354,7 @@ static void insert_timer_tick_event_handler(multiple_delay_t *ptObj)
             if (NULL == this.ptDelayList) {
                 this.wCounter = 0;
                 this.wOldCounter = 0;
+                this.wSavedCounter = 0;
                 break;
             }
         } else {
@@ -363,6 +364,10 @@ static void insert_timer_tick_event_handler(multiple_delay_t *ptObj)
                                 ptTarget, 
                                 multiple_delay_item_t);
                                 
+                if (NULL == ptTarget) {
+                    break;
+                }
+                
                 if (target.wTargetTime <= this.wCounter) {
                     //! timeout detected
                     LIST_STACK_POP(this.ptHighPriorityDelayList, ptTarget);
@@ -388,7 +393,7 @@ static void insert_timer_tick_event_handler(multiple_delay_t *ptObj)
         
 
         
-static bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG )
+private bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG )
 {
     class_internal(ptObj, ptThis, multiple_delay_t);
     if (NULL == ptThis) {
@@ -414,10 +419,7 @@ static bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG )
         EPOOL_ADD_HEAP(  multiple_delay_item_heap_t,
                     ref_obj_as(this, EPOOL(multiple_delay_item_heap_t)),
                     ptCFG->pchBuffer, ptCFG->hwSize);
-        
-        
-        
-        
+
         return NULL != init_fsm(multiple_delay_task, 
                         &base_obj(fsm(multiple_delay_task)), 
                         args(ptObj));
@@ -427,7 +429,7 @@ static bool init(  multiple_delay_t *ptObj,  multiple_delay_cfg_t *ptCFG )
 }
         
 
-fsm_initialiser(multiple_delay_task, 
+private fsm_initialiser(multiple_delay_task, 
     args(
         multiple_delay_t *ptObj
     ))
@@ -438,12 +440,14 @@ fsm_initialiser(multiple_delay_task,
         
         this.ptObj = ptObj;
     )
-        
-fsm_implementation(multiple_delay_task) 
+    
+
+private fsm_implementation(multiple_delay_task) 
         
     def_states(CHECK_LIST, RAISE_NORMAL_PRIORITY_EVENT, RAISE_LOW_PRIORITY_EVENT)    
     class_internal(this.ptObj, ptTarget, multiple_delay_t);
-        
+      
+      
     body(
         on_start(
             if (NULL == ptTarget) {
@@ -461,45 +465,47 @@ fsm_implementation(multiple_delay_task)
             target.wOldCounter = target.wSavedCounter;
         )
             
+            
         state( CHECK_LIST,
+
             do {
+                class_internal(target.ptDelayList, ptItem, multiple_delay_item_t);
+                
                 if (NULL == target.ptDelayList) {
                     break;
                 }
                 
-                do {
-                    class_internal(target.ptDelayList, ptItem, multiple_delay_item_t);
+                if (ptItem->wTargetTime <= target.wSavedCounter) {
+ 
+                    __MD_ATOM_ACCESS (
+                        //! timeout detected
+                        LIST_STACK_POP(target.ptDelayList, ptItem);
+                    )
                     
-                    if (ptItem->wTargetTime <= target.wSavedCounter) {
-                        
-                        __MD_ATOM_ACCESS (
-                            //! timeout detected
-                            LIST_STACK_POP(target.ptDelayList, ptItem);
-                        )
-                        
-                        if (ptItem->tPriority == MULTIPLE_DELAY_LOW_PRIORITY) {
-                            //! add the item to the low priority timeout list
-                            LIST_QUEUE_ENQUEUE( target.LowPriorityEvent.ptHead, 
-                                                target.LowPriorityEvent.ptTail, 
-                                                ptItem);
-                        } else {
-                            //! add the item to the normal priority timeout list
-                            LIST_QUEUE_ENQUEUE( target.NormalPriorityEvent.ptHead, 
-                                                target.NormalPriorityEvent.ptTail, 
-                                                ptItem);
-                        }
-                        
+                    if (ptItem->tPriority == MULTIPLE_DELAY_LOW_PRIORITY) {
+                        //! add the item to the low priority timeout list
+                        LIST_QUEUE_ENQUEUE( target.LowPriorityEvent.ptHead, 
+                                            target.LowPriorityEvent.ptTail, 
+                                            ptItem);
                     } else {
-                        break;
+                        //! add the item to the normal priority timeout list
+                        LIST_QUEUE_ENQUEUE( target.NormalPriorityEvent.ptHead, 
+                                            target.NormalPriorityEvent.ptTail, 
+                                            ptItem);
                     }
-                } while(true);
-                
-            } while(false);
+                    
+                } else {
+                    break;
+                }
+            } while(true);
+
                 
             update_state_to(RAISE_NORMAL_PRIORITY_EVENT);
         )
+        
             
         privilege_state(RAISE_NORMAL_PRIORITY_EVENT,
+        
             do {
                 class(multiple_delay_item_t) *ptItem;
                 
@@ -550,6 +556,7 @@ fsm_implementation(multiple_delay_task)
             
             fsm_continue();
         )
+
     )
         
 #endif

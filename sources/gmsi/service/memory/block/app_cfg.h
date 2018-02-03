@@ -15,59 +15,22 @@
 *                                                                           *
 ****************************************************************************/
 
-#ifndef __UTILITIES_COMMUNICATE_H__
-#define __UTILITIES_COMMUNICATE_H__
+//! \note do not move this pre-processor statement to other places
+#include "..\app_cfg.h"
+
+#ifndef __BLOCK_APP_CFG_H__
+#define __BLOCK_APP_CFG_H__
 
 /*============================ INCLUDES ======================================*/
+
+
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
 /*============================ TYPES =========================================*/
-
-//! \name stream
-//! @{
-typedef struct {
-    union {
-        uint8_t *pchBuffer;         //!< stream buffer
-        uint8_t *pchSrc;
-        void *pObj;
-    };
-    uint_fast16_t hwSize;       //!< stream size
-} mem_block_t;
-//! @}
-
-
-//! \name interface: byte pipe
-//! @{
-def_interface(i_byte_pipe_t)
-    //!< read a byte
-    bool (*ReadByte)(uint8_t *pchByte);
-    //!< write a byte
-    bool (*WriteByte)(uint8_t chByte);
-    
-    bool (*Flush)(void);
-end_def_interface(i_byte_pipe_t)
-//! @}
-
-//! \name interface: pipe
-//! @{
-def_interface(i_pipe_t)
-
-    inherit(i_byte_pipe_t)
-    
-    struct {
-        //! read a block
-        uint_fast16_t  (*Read)(uint8_t *pchStream, uint_fast16_t hwSize);
-        //! write a block
-        uint_fast16_t  (*Write)(uint8_t *pchStream, uint_fast16_t hwSize);
-    } Stream;
-
-end_def_interface(i_pipe_t)
-//! @}
-
 /*============================ GLOBAL VARIABLES ==============================*/
 /*============================ LOCAL VARIABLES ===============================*/
 /*============================ PROTOTYPES ====================================*/
-
+ 
 
 #endif
 /* EOF */

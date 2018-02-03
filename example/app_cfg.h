@@ -51,7 +51,7 @@
 //      <h> Input Stream (STREAM_IN)
 //          <o>The size of input buffer block <8-4096> 
 //          <i>Input stream will be received in blocks, the size of an input block is defined here.
-#define INPUT_STREAM_BLOCK_SIZE             (32)  
+#define INPUT_STREAM_BLOCK_SIZE             (16)  
 //          <o>The number of input blocks in a dedicated heap <2-65535>
 //          <i>All input blocks are allocated from a dedicated heap, the size of the heap is defined here.
 #define INPUT_STREAM_BLOCK_COUNT            (8)
@@ -71,9 +71,20 @@
 //  </h>
 
 
-#define USE_SERVICE_STREAM_TO_BLOCK         ENABLED
+
 #define USE_SERVICE_ES_SIMPLE_FRAME         ENABLED
+
+
+
 #define USE_SERVICE_MULTIPLE_DELAY          ENABLED
+#define USE_SERVICE_TELEGRAPH_ENGINE        ENABLED
+#define USE_SERVICE_BLOCK                   ENABLED
+#define USE_SERVICE_BLOCK_QUEUE             ENABLED
+#define USE_SERVICE_STREAM_TO_BLOCK         ENABLED
+
+
+#define DEMO_MULTIPLE_DELAY                 DISABLED
+#define DEMO_FRAME_USE_BLOCK_MODE           ENABLED
 
 /*============================ MACROFIED FUNCTIONS ===========================*/
 /*============================ TYPES =========================================*/

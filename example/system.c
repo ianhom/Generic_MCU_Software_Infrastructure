@@ -17,6 +17,7 @@
 
 /*============================ INCLUDES ======================================*/
 #include ".\app_platform\app_platform.h"
+#include <string.h>
 
 /*============================ MACROS ========================================*/
 
@@ -26,7 +27,7 @@
 #endif
 
 #ifndef DELAY_OBJ_POOL_SIZE
-#   warninig No defined DELAY_OBJ_POOL_SIZE, default value 4 is used
+#   warning No defined DELAY_OBJ_POOL_SIZE, default value 4 is used
 #   define DELAY_OBJ_POOL_SIZE              (4)
 #endif
 
@@ -34,9 +35,10 @@
 /*============================ TYPES =========================================*/
 /*============================ GLOBAL VARIABLES ==============================*/
 /*============================ LOCAL VARIABLES ===============================*/
-static volatile uint32_t s_wMSTicks = 0;   
-NO_INIT es_simple_frame_t s_tFrame;
-NO_INIT multiple_delay_t s_tDelayService;
+static volatile uint32_t    s_wMSTicks = 0;   
+NO_INIT es_simple_frame_t   s_tFrame;
+NO_INIT multiple_delay_t    s_tDelayService;
+NO_INIT telegraph_engine_t  s_tTelegraphEngine;
 /*============================ PROTOTYPES ====================================*/
 /*============================ IMPLEMENTATION ================================*/
 
@@ -68,13 +70,16 @@ void SysTick_Handler (void)
 
 static void system_init(void)
 {
-    app_platform_init();
-
+    if (!app_platform_init()) {
+        NVIC_SystemReset();
+    }
+        
+    
     //! initialise multiple delay service
     do {
         NO_INIT static multiple_delay_item_t s_tDelayObjPool[DELAY_OBJ_POOL_SIZE];
 
-        multiple_delay_cfg (    &s_tDelayService,
+        MULTIPLE_DELAY_CFG (    &s_tDelayService,
                                 (uint8_t *)s_tDelayObjPool,
                                 sizeof(s_tDelayObjPool)
                                 
@@ -84,10 +89,8 @@ static void system_init(void)
     SysTick_Config(SystemCoreClock  / 1000);  //!< Generate interrupt every 1 ms 
 }
 
-static uint_fast16_t frame_parser(mem_block_t tMemory, uint_fast16_t hwSize)
-{
-    return hwSize;
-}
+
+#if DEMO_MULTIPLE_DELAY == ENABLED
 
 static void app_2000ms_delay_timeout_event_handler(multiple_delay_report_status_t tStatus, void *pObj)
 {
@@ -138,24 +141,71 @@ static void app_1500ms_delay_timeout_event_handler(multiple_delay_report_status_
                                 &app_1500ms_delay_timeout_event_handler);       //!< timout event handler
 }
 
+#endif
+
+#if DEMO_FRAME_USE_BLOCK_MODE == ENABLED
+    
+static block_t * frame_parser(block_t *ptBlock, void *ptObj)
+{
+    #define DEMO_STRING         "Hello world!\r\n"
+    do {
+        if (NULL == ptBlock) {
+            break;
+        }
+        uint8_t *pchBuffer = BLOCK.Buffer.Get(ptBlock);
+        memcpy(&pchBuffer[1], DEMO_STRING, sizeof(DEMO_STRING));
+        BLOCK.Size.Set(ptBlock, sizeof(DEMO_STRING)+1);
+        
+    } while(false);
+    
+    
+    return ptBlock;
+}
+#else
+static uint_fast16_t frame_parser(mem_block_t tMemory, uint_fast16_t hwSize)
+{
+    return hwSize;
+}
+#endif
+
+
+
 static void app_init(void)
 {
     //! initialise simple frame service
     do {
         NO_INIT static uint8_t s_chFrameBuffer[FRAME_BUFFER_SIZE];
         NO_INIT static i_byte_pipe_t s_tPipe;
-        s_tPipe.ReadByte = (STREAM_IN.Stream.Read);
-        s_tPipe.WriteByte = (STREAM_OUT.Stream.Write);
-
+        s_tPipe.ReadByte = (STREAM_IN.Stream.ReadByte);
+        s_tPipe.WriteByte = (STREAM_OUT.Stream.WriteByte);
+        
+    #if DEMO_FRAME_USE_BLOCK_MODE == ENABLED
+    
+        NO_INIT static union {
+            block_t tBlock;
+            uint8_t chBuffer[FRAME_BUFFER_SIZE + sizeof(block_t)];
+        } s_tBuffer;
+        BLOCK.Init(&s_tBuffer.tBlock, sizeof(s_tBuffer) - sizeof(block_t));
+    #endif
         //! initialise simple frame service
-        es_simple_frame_cfg(    &s_tFrame, 
+        ES_SIMPLE_FRAME_CFG(    &s_tFrame, 
                                 &s_tPipe,
+                                
+                            #if DEMO_FRAME_USE_BLOCK_MODE == ENABLED
+                                &frame_parser,
+                                .bStaticBufferMode = false,
+                                .ptBlock = &s_tBuffer.tBlock,
+                                .pTag = &s_tTelegraphEngine
+                            #else
                                 &frame_parser,
                                 s_chFrameBuffer,
                                 sizeof(s_chFrameBuffer)
+                            #endif
                             );
     } while(false);
     
+    
+#if DEMO_MULTIPLE_DELAY == ENABLED
     MULTIPLE_DELAY.RequestDelay(&s_tDelayService, 
                                 2000,                                           //!< request delay 2000ms
                                 MULTIPLE_DELAY_LOW_PRIORITY,                    //!< priority is low
@@ -167,7 +217,7 @@ static void app_init(void)
                                 3000,                                           //!< request delay 3000ns
                                 MULTIPLE_DELAY_LOW_PRIORITY,                    //!< priority is low
                                 NULL,                                           //!< no tag
-                                &app_3000ms_delay_timeout_event_handler);        //!< timout event handler
+                                &app_3000ms_delay_timeout_event_handler);       //!< timout event handler
                                 
     //! request again
     MULTIPLE_DELAY.RequestDelay(&s_tDelayService, 
@@ -175,33 +225,61 @@ static void app_init(void)
                                 MULTIPLE_DELAY_NORMAL_PRIORITY,                 //!< priority is normal
                                 NULL,                                           //!< no tag
                                 &app_1500ms_delay_timeout_event_handler);       //!< timout event handler
+#endif
+
 }
 
 /*----------------------------------------------------------------------------
   Main function
  *----------------------------------------------------------------------------*/
+ 
+ #if __IS_COMPILER_ARM_COMPILER_6__
+__asm(".global __use_no_semihosting\n\t");
+__asm(".global __ARM_use_no_argv\n\t");
+
+void _sys_exit(int ch)
+{
+    while(1);
+}
+
+void _ttywrch(int ch)
+{
+
+}
+
+#include <rt_sys.h>
+
+FILEHANDLE $Sub$$_sys_open(const char *name, int openmode)
+{
+    return 0;
+}
+
+#endif
+ 
+ 
+ 
 int main (void) 
 {
     system_init();
     app_init();
     
-            
-    
     while (true) {
+    
     #if false
         if (fsm_rt_cpl == ES_SIMPLE_FRAME.Task(&s_tFrame)) {
             STREAM_OUT.Stream.Flush();
         }
     #else
         uint8_t chByte;
-        if (STREAM_IN.Stream.Read(&chByte)) {
-            STREAM_OUT.Stream.Write(chByte);
+        if (STREAM_IN.Stream.ReadByte(&chByte)) {
+            STREAM_OUT.Stream.WriteByte(chByte);
         } else {
             STREAM_OUT.Stream.Flush();
         }
     #endif
+
+        //MULTIPLE_DELAY.Task(&s_tDelayService);
         
-        MULTIPLE_DELAY.Task(&s_tDelayService);
     }
 }
 

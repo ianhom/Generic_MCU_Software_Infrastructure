@@ -25,6 +25,8 @@
 #include "..\iframe.h"
 
 #if USE_SERVICE_ES_SIMPLE_FRAME == ENABLED
+#include "..\..\..\memory\block\block.h"
+
 /*============================ MACROS ========================================*/
 /*============================ MACROFIED FUNCTIONS ===========================*/
 
@@ -34,15 +36,10 @@
                 es_simple_frame_cfg_t tCFG = {__VA_ARGS__};                     \
                 ES_SIMPLE_FRAME.Init((__FRAME__),&tCFG);                        \
             } while(false)
-
-
-#define es_simple_frame_cfg(__FRAME__, ...)                                     \
-            ES_SIMPLE_FRAME_CFG(__FRAME__, __VA_ARGS__)
             
 /*============================ TYPES =========================================*/
 def_structure(__es_simple_frame_fsm_internal)
     inherit(mem_block_t)
-    
     uint16_t hwLength;
     uint16_t hwCounter;
     uint16_t hwCheckSUM;
@@ -51,8 +48,13 @@ end_def_structure(__es_simple_frame_fsm_internal)
 extern_simple_fsm(es_simple_frame_decoder,
     def_params(
         i_byte_pipe_t *ptPipe;          //!< pipe
-        frame_parser_t *fnParser;       //!< parser
+        union {
+            frame_parser_t *fnParser;       //!< parser
+            frame_block_parser_t *fnBlockParser;
+        };
         bool bUnsupportFrame;
+        block_t *ptBlock;
+        void *pTag;
         inherit(__es_simple_frame_fsm_internal)
     ))
     
@@ -68,13 +70,13 @@ extern_simple_fsm(es_simple_frame_decoder_wrapper,
     def_params(
         es_simple_frame_t *ptFrame;
     ))
-    
 
 extern_simple_fsm(es_simple_frame_encoder_wrapper,
     def_params(
         es_simple_frame_t *ptFrame;
     ))
-    
+ 
+
 //! \name class: e-snail simple frame
 //! @{
 extern_class(es_simple_frame_t)
@@ -83,6 +85,7 @@ extern_class(es_simple_frame_t)
     inherit(fsm(es_simple_frame_decoder_wrapper))
     inherit(fsm(es_simple_frame_encoder))
     inherit(fsm(es_simple_frame_encoder_wrapper))
+    bool    bDynamicBufferMode;
 end_extern_class(es_simple_frame_t)
 //! @}
 
@@ -90,40 +93,32 @@ end_extern_class(es_simple_frame_t)
 //! @{
 typedef struct {
     i_byte_pipe_t   *ptPipe; 
-    frame_parser_t  *fnParser;
-    inherit(mem_block_t)
+    void  *fnParser;
+    union {
+        inherit(mem_block_t)
+        struct {
+            bool        bStaticBufferMode;
+            block_t *   ptBlock;
+        };
+    };
+    void *pTag;
 }es_simple_frame_cfg_t;
 //! @}
 
 /*============================ PROTOTYPES ====================================*/
-
-extern_fsm_initialiser(es_simple_frame_decoder,
-    args(
-        i_byte_pipe_t *ptPipe, 
-        frame_parser_t *fnParser,
-        mem_block_t tMemory
-    ))
-
-extern_fsm_initialiser(es_simple_frame_encoder,
-    args(
-        i_byte_pipe_t *ptPipe
-    ))
-
-extern_fsm_implementation(es_simple_frame_encoder,
-        args(
-            uint8_t *pchData, uint_fast16_t hwSize
-        ));
-       
-extern_fsm_implementation(es_simple_frame_decoder);
-
 /*============================ TYPES Part Two ================================*/
 //! \name frame interface
 //! @{
 def_interface(i_es_simple_frame_t)
-    bool (*Init)(es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG);
-    fsm_rt_t (*Task)(es_simple_frame_t *ptFrame);
-    fsm_rt_t (*Decoder)(es_simple_frame_t *ptFrame);
-    fsm_rt_t (*Encoder)(es_simple_frame_t *ptFrame, uint8_t *pchData, uint_fast16_t hwSize);
+    bool                (*Init)     (   es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG);
+    fsm_rt_t            (*Task)     (   es_simple_frame_t *ptFrame);
+    fsm_rt_t            (*Decoder)  (   es_simple_frame_t *ptFrame);
+    fsm_rt_t            (*Encoder)  (   es_simple_frame_t *ptFrame, 
+                                        uint8_t *pchData,
+                                        uint_fast16_t hwSize);
+    struct {
+        uint_fast16_t   (*GetSize)  (   es_simple_frame_t *ptFrame);
+    }Buffer;
 end_def_interface(i_es_simple_frame_t)
 //! @}
 

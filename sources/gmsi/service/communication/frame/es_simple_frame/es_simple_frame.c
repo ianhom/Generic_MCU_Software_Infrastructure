@@ -23,6 +23,7 @@
 #include <string.h>
 
 #if USE_SERVICE_ES_SIMPLE_FRAME == ENABLED 
+#include "..\..\..\memory\block\block.h"
 
 /*============================ MACROS ========================================*/
 
@@ -41,7 +42,6 @@
 
 def_structure(__es_simple_frame_fsm_internal)
     inherit(mem_block_t)
-    
     uint16_t hwLength;
     uint16_t hwCounter;
     uint16_t hwCheckSUM;
@@ -50,8 +50,13 @@ end_def_structure(__es_simple_frame_fsm_internal)
 simple_fsm(es_simple_frame_decoder,
     def_params(
         i_byte_pipe_t *ptPipe;          //!< pipe
-        frame_parser_t *fnParser;       //!< parser
+        union {
+            frame_parser_t *fnParser;       //!< parser
+            frame_block_parser_t *fnBlockParser;
+        };
         bool bUnsupportFrame;
+        block_t *ptBlock;
+        void *pTag;
         inherit(__es_simple_frame_fsm_internal)
     ))
     
@@ -82,6 +87,7 @@ def_class(es_simple_frame_t)
     inherit(fsm(es_simple_frame_decoder_wrapper))
     inherit(fsm(es_simple_frame_encoder))
     inherit(fsm(es_simple_frame_encoder_wrapper))
+    bool    bDynamicBufferMode;
 end_def_class(es_simple_frame_t)
 //! @}
 
@@ -89,65 +95,80 @@ end_def_class(es_simple_frame_t)
 //! @{
 typedef struct {
     i_byte_pipe_t   *ptPipe; 
-    frame_parser_t  *fnParser;
-    inherit(mem_block_t)
+    void  *fnParser;
+    union {
+        inherit(mem_block_t)
+        struct {
+            bool        bStaticBufferMode;
+            block_t *   ptBlock;
+        };
+    };
+    void *pTag;
 }es_simple_frame_cfg_t;
 //! @}
 
 
 /*============================ PROTOTYPES ====================================*/
 
-extern_fsm_initialiser(es_simple_frame_decoder,
+private extern_fsm_initialiser(es_simple_frame_decoder,
     args(
         i_byte_pipe_t *ptPipe, 
-        frame_parser_t *fnParser,
-        mem_block_t tMemory
+        void *fnParser,
+        mem_block_t tMemory,
+        block_t *ptBlock,
+        void *pTag
     ))
 
-extern_fsm_initialiser(es_simple_frame_encoder,
+private extern_fsm_initialiser(es_simple_frame_encoder,
     args(
         i_byte_pipe_t *ptPipe
     ))
     
-extern_fsm_initialiser(es_simple_frame_decoder_wrapper,
+private extern_fsm_initialiser(es_simple_frame_decoder_wrapper,
     args(
         es_simple_frame_t *ptFrame
     ))
     
-extern_fsm_initialiser(es_simple_frame_encoder_wrapper,
+private extern_fsm_initialiser(es_simple_frame_encoder_wrapper,
     args(
         es_simple_frame_t *ptFrame
     ))
 
-extern_fsm_implementation(es_simple_frame_encoder,
+private extern_fsm_implementation(es_simple_frame_encoder,
         args(
             uint8_t *pchData, uint_fast16_t hwSize
         ));
 
-extern_fsm_implementation(es_simple_frame_decoder);
+private extern_fsm_implementation(es_simple_frame_decoder);
 
-extern_fsm_implementation(es_simple_frame_encoder_wrapper,
+private extern_fsm_implementation(es_simple_frame_encoder_wrapper,
     args(
         uint8_t *pchBuffer, uint_fast16_t hwSize
     ));
 
-extern_fsm_implementation(es_simple_frame_decoder_wrapper);
+private extern_fsm_implementation(es_simple_frame_decoder_wrapper);
 
-extern bool es_simple_frame_init(  
+private bool es_simple_frame_init(  
     es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG);
-extern fsm_rt_t es_simple_frame_task(es_simple_frame_t *ptFrame);
+//private fsm_rt_t es_simple_frame_task(es_simple_frame_t *ptFrame);
 
-static fsm_rt_t encoder(es_simple_frame_t *ptFrame, uint8_t *pchBuffer, uint_fast16_t hwSize);
-static fsm_rt_t task(es_simple_frame_t *ptFrame);
-static fsm_rt_t decoder(es_simple_frame_t *ptFrame);
+private fsm_rt_t encoder(es_simple_frame_t *ptFrame, uint8_t *pchBuffer, uint_fast16_t hwSize);
+private fsm_rt_t task(es_simple_frame_t *ptFrame);
+private fsm_rt_t decoder(es_simple_frame_t *ptFrame);
+private uint_fast16_t get_buffer_size ( es_simple_frame_t *ptFrame);
 /*============================ TYPES Part Two ================================*/
 //! \name frame interface
 //! @{
 def_interface(i_es_simple_frame_t)
-    bool (*Init)(es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG);
-    fsm_rt_t (*Task)(es_simple_frame_t *ptFrame);
-    fsm_rt_t (*Decoder)(es_simple_frame_t *ptFrame);
-    fsm_rt_t (*Encoder)(es_simple_frame_t *ptFrame, uint8_t *pchData, uint_fast16_t hwSize);
+    bool                (*Init)     (   es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG);
+    fsm_rt_t            (*Task)     (   es_simple_frame_t *ptFrame);
+    fsm_rt_t            (*Decoder)  (   es_simple_frame_t *ptFrame);
+    fsm_rt_t            (*Encoder)  (   es_simple_frame_t *ptFrame, 
+                                        uint8_t *pchData,
+                                        uint_fast16_t hwSize);
+    struct {
+        uint_fast16_t   (*GetSize)  (   es_simple_frame_t *ptFrame);
+    }Buffer;
 end_def_interface(i_es_simple_frame_t)
 //! @}
 
@@ -159,13 +180,36 @@ const i_es_simple_frame_t ES_SIMPLE_FRAME = {
         .Task =         &task,
         .Decoder =      &decoder,
         .Encoder =      &encoder,
-    
+        .Buffer = {
+            .GetSize =  &get_buffer_size,
+        },
     };
     
 /*============================ IMPLEMENTATION ================================*/
 
 
-
+private uint_fast16_t get_buffer_size ( es_simple_frame_t *ptFrame)
+{
+    uint_fast16_t hwSize = 0;
+    class_internal(ptFrame, ptThis, es_simple_frame_t);
+    
+    do {
+        if (NULL == ptThis) {
+            break;
+        }
+        class_internal( ref_obj_as(this, fsm(es_simple_frame_decoder)), 
+                        ptTarget, 
+                        fsm(es_simple_frame_decoder));
+        
+        if (NULL == target.ptBlock ) {
+            hwSize = target.hwSize;
+        } else {
+            hwSize = BLOCK.Size.Capability(target.ptBlock);
+        }
+    } while(false);
+     
+    return hwSize; 
+}
 
 
 /*! \brief initlialize es_simple_frame
@@ -174,7 +218,7 @@ const i_es_simple_frame_t ES_SIMPLE_FRAME = {
  *! \retval true initliazation is successful
  *! \retval false failed in initialization
  */
-bool es_simple_frame_init(  
+private bool es_simple_frame_init(  
     es_simple_frame_t *ptFrame, es_simple_frame_cfg_t *ptCFG)
 {
     class_internal(ptFrame, ptThis, es_simple_frame_t);
@@ -184,36 +228,62 @@ bool es_simple_frame_init(
     } else if (    
             (NULL == ptFrame) 
         ||  (NULL == ptCFG->ptPipe)
-        ||  (NULL == ptCFG->pchBuffer)
-        ||  (NULL == ptCFG->fnParser)
-        || (0 == ptCFG->hwSize )) {
+        //||  (NULL == ptCFG->pchBuffer)
+        //|| (0 == ptCFG->hwSize )
+        ||  (NULL == ptCFG->fnParser)) {
         return false;
     } else if ((NULL == ptCFG->ptPipe->ReadByte) || (NULL == ptCFG->ptPipe->WriteByte)) {
         return false;
     }
     
+    memset((void *)ptFrame, 0, sizeof(es_simple_frame_t));
+    
     init_lock(&this.tMutex);
     
     do {
-
-        
-        if (NULL != init_fsm(es_simple_frame_decoder, 
-                        ref_obj_as( this, fsm(es_simple_frame_decoder)), 
-                        args(ptCFG->ptPipe, ptCFG->fnParser),
-                        obj_convert_as((*ptCFG), mem_block_t))) {
+        if (!ptCFG->bStaticBufferMode) {
+            this.bDynamicBufferMode = true;
+            //! dynamic buffer mode
+            if (NULL == ptCFG->ptBlock) {
+                break;
+            } else if (!BLOCK.Size.Get(ptCFG->ptBlock)) {
+                //! empty memory block
+                break;
+            }
+            
+            if (NULL == init_fsm(es_simple_frame_decoder, 
+                            ref_obj_as( this, fsm(es_simple_frame_decoder)), 
+                            args(ptCFG->ptPipe, ptCFG->fnParser),
+                            (mem_block_t){NULL ,0},
+                            ptCFG->ptBlock, ptCFG->pTag)) {
+                break;
+            }
+            
+        } else if (0 == ptCFG->hwSize) {
+            //! static buffer mode, empty buffer detected
             break;
+        } else {        
+            this.bDynamicBufferMode = false;
+            if (NULL == init_fsm(es_simple_frame_decoder, 
+                            ref_obj_as( this, fsm(es_simple_frame_decoder)), 
+                            args(ptCFG->ptPipe, ptCFG->fnParser),
+                            obj_convert_as((*ptCFG), mem_block_t),
+                            NULL, ptCFG->pTag)) {
+                break;
+            }
         }
-        if (NULL != init_fsm(es_simple_frame_encoder, 
+
+        if (NULL == init_fsm(es_simple_frame_encoder, 
                     ref_obj_as( this, fsm(es_simple_frame_encoder)), 
                     args(ptCFG->ptPipe))) {
             break;
         }             
-        if (NULL != init_fsm(es_simple_frame_encoder_wrapper, 
+        if (NULL == init_fsm(es_simple_frame_encoder_wrapper, 
                     ref_obj_as( this, fsm(es_simple_frame_encoder_wrapper)), 
                     args(ptFrame))) {
             break;
         } 
-        if (NULL != init_fsm(es_simple_frame_decoder_wrapper, 
+        if (NULL == init_fsm(es_simple_frame_decoder_wrapper, 
                     ref_obj_as( this, fsm(es_simple_frame_decoder_wrapper)), 
                     args(ptFrame))) {
             break;
@@ -225,11 +295,13 @@ bool es_simple_frame_init(
     return false;
 }
 
-fsm_initialiser(es_simple_frame_decoder,
+private fsm_initialiser(es_simple_frame_decoder,
     args(
         i_byte_pipe_t *ptPipe, 
-        frame_parser_t *fnParser,
-        mem_block_t tMemory
+        void *fnParser,
+        mem_block_t tMemory,
+        block_t *ptBlock,
+        void *pTag
     ))
         
     init_body(
@@ -238,24 +310,41 @@ fsm_initialiser(es_simple_frame_decoder,
             abort_init();
         } else if ((NULL == ptPipe->ReadByte) || (NULL == ptPipe->WriteByte)) {
             abort_init();
+        } else if (    (NULL == ptBlock) 
+                    && (    (NULL == tMemory.pchBuffer) 
+                        ||  (0 == tMemory.hwSize)) ) {
+            abort_init();
         }
-        memset(ref_obj_as(this, __es_simple_frame_fsm_internal), 0, sizeof(__es_simple_frame_fsm_internal));
-        obj_convert_as(this, mem_block_t) = tMemory;
-        this.ptPipe = ptPipe;
-        this.fnParser = fnParser;
-    )
         
-static fsm_rt_t decoder(es_simple_frame_t *ptFrame)
+        memset( ref_obj_as(this, __es_simple_frame_fsm_internal), 0, 
+                sizeof(__es_simple_frame_fsm_internal));
+                
+        if (NULL == ptBlock) {
+            obj_convert_as(this, mem_block_t) = tMemory;
+            this.fnParser = (frame_parser_t *)fnParser;
+        } else {
+            this.ptBlock = ptBlock;
+            this.fnBlockParser = (frame_block_parser_t *)fnParser;
+        }
+        
+        this.ptPipe = ptPipe;
+        this.pTag = pTag; 
+        
+    )
+
+        
+private fsm_rt_t decoder(es_simple_frame_t *ptFrame)
 {
     class_internal( ptFrame, ptThis, es_simple_frame_t);
     if (NULL == ptFrame) {
-        fsm_report(GSF_ERR_INVALID_PTR);
+        return (fsm_rt_t)(GSF_ERR_INVALID_PTR);
     }
     
     return call_fsm(es_simple_frame_decoder, ref_obj_as(this, fsm(es_simple_frame_decoder)));
 } 
         
-fsm_implementation(es_simple_frame_decoder)
+        
+private fsm_implementation(es_simple_frame_decoder)
         
     def_states (
          WAIT_FOR_HEAD,
@@ -266,9 +355,16 @@ fsm_implementation(es_simple_frame_decoder)
          WAIT_FOR_CHECK_SUM_H    
     )    
     uint8_t chData;
-        
+      
     body (
         on_start(
+        
+            if (NULL != this.ptBlock) {
+                this.pchBuffer = BLOCK.Buffer.Get(this.ptBlock);
+                BLOCK.Size.Reset(this.ptBlock);
+                this.hwSize = BLOCK.Size.Get(this.ptBlock);
+            }
+        
             if (NULL == this.ptPipe) {
                 fsm_report(GSF_ERR_IO)
             } else if (NULL == this.ptPipe->ReadByte) {
@@ -280,13 +376,14 @@ fsm_implementation(es_simple_frame_decoder)
             }
             this.hwCheckSUM = CRC_INIT;
             this.bUnsupportFrame = false;
+            
+            
         )
             
         privilege_group(
-
             state(WAIT_FOR_HEAD,
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
                 
                 if (ES_SIMPLE_FRAME_HEAD == chData) {
@@ -294,12 +391,13 @@ fsm_implementation(es_simple_frame_decoder)
                 } else {
                     fsm_on_going();
                 }
+                
             )
             
             state(WAIT_FOR_LENGTH_L,
                 
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
                 
                 CRC(this.hwCheckSUM, chData);
@@ -311,7 +409,7 @@ fsm_implementation(es_simple_frame_decoder)
             state(WAIT_FOR_LENGTH_H,
                 
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
                 
                 CRC(this.hwCheckSUM, chData);
@@ -328,30 +426,30 @@ fsm_implementation(es_simple_frame_decoder)
                 update_state_to(WAIT_FOR_DATA);
                 this.hwCounter = 0;
             )
-                
+              
             state(WAIT_FOR_DATA,
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
                 
                 CRC(this.hwCheckSUM, chData);
+
                 if (!this.bUnsupportFrame) {
-                    this.pchBuffer[this.hwCounter++] = chData;
+                    this.pchBuffer[this.hwCounter] = chData;
                 }
                 
-                if (this.hwCounter >= this.hwLength) {
+                if (++this.hwCounter >= this.hwLength) {
                     transfer_to(WAIT_FOR_CHECK_SUM_L);
                 }
                 
                 fsm_continue();
             )
-                
+              
             state(WAIT_FOR_CHECK_SUM_L,
                 
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
-                
                 if (!(((uint8_t *)&this.hwCheckSUM)[0] == chData)) {
                     reset_fsm();
                     fsm_on_going();
@@ -359,36 +457,59 @@ fsm_implementation(es_simple_frame_decoder)
                 
                 update_state_to(WAIT_FOR_CHECK_SUM_H);
             )
+            
                 
+            
             state(WAIT_FOR_CHECK_SUM_H,
                 
                 if (!this.ptPipe->ReadByte(&chData)) {
-                    fsm_report(fsm_rt_wait_for_obj);
+                    fsm_wait_for_obj();
                 }
-                
-                
                 if (!(((uint8_t *)&this.hwCheckSUM)[1] == chData)) {
                     reset_fsm();
                     fsm_on_going();
                 }
-                
+                    
                 if (this.bUnsupportFrame) {
                     //! report unsupported frame
                     this.hwLength = 1;
                     this.pchBuffer[0] = ES_SIMPLE_FRAME_ERROR;
-                } else {
+                } else if (NULL == this.ptBlock){
+                    //! static buffer mode
                     //! call parser
                     this.hwLength = 
                         this.fnParser(  obj_convert_as(this, mem_block_t), 
                                         this.hwLength);
+                } else {
+                    block_t *ptBlock = this.ptBlock;
+                    
+                    BLOCK.Size.Set(ptBlock, this.hwLength);
+                    
+                    //! dynamic buffer mode
+                    ptBlock = this.fnBlockParser(ptBlock, this.pTag);
+
+                    do {
+                        if (NULL == ptBlock) {
+                            this.hwLength = 0;
+                            break;
+                        } 
+                        
+                        //! get reply 
+                        this.ptBlock = ptBlock;
+                        this.hwLength = BLOCK.Size.Get(ptBlock);
+                        this.pchBuffer = BLOCK.Buffer.Get(ptBlock);
+                    } while(false);
+                     
                 }
                 fsm_cpl();
             )
+            
         
         )
     )
+
                 
-fsm_initialiser(es_simple_frame_decoder_wrapper,
+private fsm_initialiser(es_simple_frame_decoder_wrapper,
     args(
         es_simple_frame_t *ptFrame
     ))
@@ -400,18 +521,18 @@ fsm_initialiser(es_simple_frame_decoder_wrapper,
         this.ptFrame = ptFrame;
     )          
 
-static fsm_rt_t task(es_simple_frame_t *ptFrame)
+private fsm_rt_t task(es_simple_frame_t *ptFrame)
 {
     class_internal( ptFrame, ptThis, es_simple_frame_t);
     if (NULL == ptFrame) {
-        fsm_report(GSF_ERR_INVALID_PTR);
+        return (fsm_rt_t)(GSF_ERR_INVALID_PTR);
     }
     
     return call_fsm(es_simple_frame_decoder_wrapper, 
                     &base_obj(fsm(es_simple_frame_decoder_wrapper)));
 } 
                 
-fsm_implementation(es_simple_frame_decoder_wrapper)
+private fsm_implementation(es_simple_frame_decoder_wrapper)
     def_states(DECODING, TRY_TO_LOCK, REPLY)
                 
     fsm_rt_t tFSMReply;
@@ -431,6 +552,7 @@ fsm_implementation(es_simple_frame_decoder_wrapper)
                 
             tFSMReply = call_fsm(es_simple_frame_decoder, 
                                  ref_obj_as(base, fsm(es_simple_frame_decoder)));
+            
             if (is_fsm_err(tFSMReply)) {
                 fsm_report(tFSMReply);
             } else if (fsm_rt_cpl == tFSMReply) {
@@ -479,7 +601,7 @@ fsm_implementation(es_simple_frame_decoder_wrapper)
 
             
             
-fsm_initialiser(es_simple_frame_encoder,
+private fsm_initialiser(es_simple_frame_encoder,
     args(
         i_byte_pipe_t *ptPipe
     ))
@@ -498,7 +620,7 @@ fsm_initialiser(es_simple_frame_encoder,
         
 
         
-fsm_implementation(es_simple_frame_encoder,
+private fsm_implementation(es_simple_frame_encoder,
     args(
         uint8_t *pchData, uint_fast16_t hwSize
     ))
@@ -588,7 +710,7 @@ fsm_implementation(es_simple_frame_encoder,
    
             
         
-fsm_initialiser(es_simple_frame_encoder_wrapper,
+private fsm_initialiser(es_simple_frame_encoder_wrapper,
     args(
         es_simple_frame_t *ptFrame
     ))
@@ -601,11 +723,11 @@ fsm_initialiser(es_simple_frame_encoder_wrapper,
     )
             
         
-static fsm_rt_t encoder(es_simple_frame_t *ptFrame, uint8_t *pchBuffer, uint_fast16_t hwSize)
+private fsm_rt_t encoder(es_simple_frame_t *ptFrame, uint8_t *pchBuffer, uint_fast16_t hwSize)
 {
     class_internal( ptFrame, ptThis, es_simple_frame_t);
     if (NULL == ptFrame) {
-        fsm_report(GSF_ERR_INVALID_PTR);
+        return (fsm_rt_t)(GSF_ERR_INVALID_PTR);
     }
     
     return call_fsm(es_simple_frame_encoder_wrapper, 
@@ -613,7 +735,7 @@ static fsm_rt_t encoder(es_simple_frame_t *ptFrame, uint8_t *pchBuffer, uint_fas
                     args(pchBuffer, hwSize));
 }         
         
-fsm_implementation(es_simple_frame_encoder_wrapper,
+private fsm_implementation(es_simple_frame_encoder_wrapper,
     args(
         uint8_t *pchBuffer, uint_fast16_t hwSize
     ))
